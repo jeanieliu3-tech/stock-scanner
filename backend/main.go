@@ -106,27 +106,30 @@ func main() {
 		log.Printf("[EMBED DIAG]   %s (dir=%v)", e.Name(), e.IsDir())
 	}
 	if embedErr == nil {
-		// Use embedded static files (production container build)
-		r.StaticFS("/assets", http.FS(staticFS))
-		r.NoRoute(func(c *gin.Context) {
+		// Mount static files via middleware (NOT StaticFS — it can conflict with router)
+		r.Use(func(c *gin.Context) {
 			path := c.Request.URL.Path
+			// Only handle non-API static requests
 			if len(path) >= 4 && path[:4] == "/api" {
-				c.JSON(http.StatusNotFound, gin.H{"code": 404, "msg": "not found"})
+				c.Next()
 				return
 			}
-			// Try exact file
+			// Try to serve the exact file from embedded FS
 			f, err := staticFS.Open(path)
 			if err == nil {
 				f.Close()
 				c.FileFromFS(path, http.FS(staticFS))
+				c.Abort()
 				return
 			}
-			// SPA fallback
+			// SPA fallback: serve index.html for all non-API, non-file routes
 			c.FileFromFS("index.html", http.FS(staticFS))
+			c.Abort()
 		})
 		log.Println("Serving static frontend (embedded)")
 	} else {
 		log.Println("Static files not embedded, checking disk...")
+		log.Printf("Embed error detail: %v", embedErr)
 	}
 
 	// 使用自定义 http.Server，设置写超时为 90s
