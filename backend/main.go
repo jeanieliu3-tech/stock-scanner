@@ -79,10 +79,32 @@ func main() {
 		api.GET("/health", func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"status": "success", "data": "ok"})
 		})
+		api.GET("/debug-embed", func(c *gin.Context) {
+			entries, err := staticEmbed.ReadDir("static")
+			if err != nil {
+				c.JSON(http.StatusOK, gin.H{"embed_status": "error", "error": err.Error()})
+				return
+			}
+			names := make([]string, 0, len(entries))
+			for _, e := range entries {
+				names = append(names, e.Name())
+			}
+			c.JSON(http.StatusOK, gin.H{
+				"embed_status": "ok",
+				"entry_count":  len(entries),
+				"entries":      names,
+			})
+		})
 	}
 
 	// Serve static frontend files (embedded or from disk)
 	staticFS, embedErr := fs.Sub(staticEmbed, "static")
+	// Diagnostic: check what's embedded
+	entries, _ := staticEmbed.ReadDir("static")
+	log.Printf("[EMBED DIAG] embedErr=%v, entries in 'static'=%d", embedErr, len(entries))
+	for _, e := range entries {
+		log.Printf("[EMBED DIAG]   %s (dir=%v)", e.Name(), e.IsDir())
+	}
 	if embedErr == nil {
 		// Use embedded static files (production container build)
 		r.StaticFS("/assets", http.FS(staticFS))
