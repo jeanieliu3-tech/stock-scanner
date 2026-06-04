@@ -1,8 +1,6 @@
 package main
 
 import (
-	"embed"
-	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -12,9 +10,6 @@ import (
 	"stock-app/handlers"
 	"stock-app/services"
 )
-
-//go:embed static
-var staticEmbed embed.FS
 
 func main() {
 	// Must read PORT (Render standard). Fallback to BACKEND_PORT / DEPLOY_RUN_PORT for local dev.
@@ -80,57 +75,49 @@ func main() {
 			c.JSON(http.StatusOK, gin.H{"status": "success", "data": "ok"})
 		})
 		api.GET("/debug-embed", func(c *gin.Context) {
-			entries, err := staticEmbed.ReadDir("static")
-			if err != nil {
-				c.JSON(http.StatusOK, gin.H{"embed_status": "error", "error": err.Error()})
-				return
-			}
-			names := make([]string, 0, len(entries))
-			for _, e := range entries {
-				names = append(names, e.Name())
-			}
-			c.JSON(http.StatusOK, gin.H{
-				"embed_status": "ok",
-				"entry_count":  len(entries),
-				"entries":      names,
-			})
+		entries, err := os.ReadDir("./static")
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{"status": "error", "error": err.Error()})
+			return
+		}
+		names := make([]string, 0, len(entries))
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"status":      "ok",
+			"entry_count": len(entries),
+			"entries":     names,
 		})
+	})
 	}
 
-	// Serve static frontend files (embedded or from disk)
-	staticFS, embedErr := fs.Sub(staticEmbed, "static")
-	// Diagnostic: check what's embedded
-	entries, _ := staticEmbed.ReadDir("static")
-	log.Printf("[EMBED DIAG] embedErr=%v, entries in 'static'=%d", embedErr, len(entries))
-	for _, e := range entries {
-		log.Printf("[EMBED DIAG]   %s (dir=%v)", e.Name(), e.IsDir())
-	}
-	if embedErr == nil {
-		// Mount static files via middleware (NOT StaticFS — it can conflict with router)
-		r.Use(func(c *gin.Context) {
-			path := c.Request.URL.Path
-			// Only handle non-API static requests
-			if len(path) >= 4 && path[:4] == "/api" {
-				c.Next()
-				return
-			}
-			// Try to serve the exact file from embedded FS
-			f, err := staticFS.Open(path)
-			if err == nil {
-				f.Close()
-				c.FileFromFS(path, http.FS(staticFS))
-				c.Abort()
-				return
-			}
-			// SPA fallback: serve index.html for all non-API, non-file routes
-			c.FileFromFS("index.html", http.FS(staticFS))
-			c.Abort()
-		})
-		log.Println("Serving static frontend (embedded)")
+	// ============ Static file serving (from disk, NOT embed) ============
+	// Log what's in the static directory
+	diskEntries, diskErr := os.ReadDir("./static")
+	if diskErr != nil {
+		log.Printf("[STATIC] ERROR reading ./static: %v", diskErr)
 	} else {
-		log.Println("Static files not embedded, checking disk...")
-		log.Printf("Embed error detail: %v", embedErr)
+		log.Printf("[STATIC] ./static contains %d entries", len(diskEntries))
+		for _, e := range diskEntries {
+			log.Printf("[STATIC]   %s (dir=%v)", e.Name(), e.IsDir())
+		}
 	}
+
+	// Register static files AND SPA fallback AFTER all API routes
+	// This is critical: Gin matches routes in registration order
+	r.Static("/assets", "./static/assets")
+	r.NoRoute(func(c *gin.Context) {
+		path := c.Request.URL.Path
+		// Don't interfere with API routes (shouldn't reach here for /api/*, but be safe)
+		if len(path) >= 4 && path[:4] == "/api" {
+			c.JSON(http.StatusNotFound, gin.H{"code": 404, "msg": "api not found"})
+			return
+		}
+		// SPA: serve index.html for any unmatched route
+		c.File("./static/index.html")
+	})
+	log.Println("[STATIC] Static file serving registered (from disk)")
 
 	// 使用自定义 http.Server，设置写超时为 90s
 	// ScanDualEngineFast 并发后耗时约 5s，ScanAllAShares 耗时约 60s

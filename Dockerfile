@@ -16,12 +16,14 @@ COPY backend/ ./
 COPY --from=frontend-builder /build/frontend/dist ./static
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o backend_linux .
 
-# ---- Stage 3: Runtime ----
+# ---- Stage 3: Runtime (with static files) ----
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates tzdata
 ENV TZ=Asia/Shanghai
 WORKDIR /app
 COPY --from=backend-builder /build/backend/backend_linux .
+# Copy frontend static files for disk serving
+COPY --from=frontend-builder /build/frontend/dist ./static
 RUN chmod +x backend_linux
 EXPOSE 10000
 CMD ["./backend_linux"]
