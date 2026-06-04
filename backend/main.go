@@ -13,7 +13,7 @@ import (
 	"stock-app/services"
 )
 
-//go:embed static/*
+//go:embed static
 var staticEmbed embed.FS
 
 func main() {
