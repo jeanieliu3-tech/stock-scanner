@@ -7,12 +7,9 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"stock-app/handlers"
-	"stock-app/services"
 )
 
 func main() {
-	// Must read PORT (Render standard). Fallback to BACKEND_PORT / DEPLOY_RUN_PORT for local dev.
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = os.Getenv("BACKEND_PORT")
@@ -24,57 +21,56 @@ func main() {
 		port = "3000"
 	}
 
+	log.Printf("========================================")
+	log.Printf("  MINIMAL DEBUG SERVER STARTING")
+	log.Printf("  Port: %s", port)
+	log.Printf("========================================")
+
+	// Check static directory
+	entries, err := os.ReadDir("./static")
+	if err != nil {
+		log.Printf("[STATIC] ERROR: %v", err)
+	} else {
+		log.Printf("[STATIC] ./static has %d entries:", len(entries))
+		for _, e := range entries {
+			log.Printf("[STATIC]   %s (isDir=%v)", e.Name(), e.IsDir())
+			if e.IsDir() {
+				sub, _ := os.ReadDir("./static/" + e.Name())
+				for _, s := range sub {
+					log.Printf("[STATIC]     %s", s.Name())
+				}
+			}
+		}
+	}
+
 	gin.SetMode(gin.ReleaseMode)
-	r := gin.Default()
-	r.Use(corsMiddleware())
+	r := gin.New()
 
-	stockService := services.NewStockService()
-	stockHandler := handlers.NewStockHandler(stockService)
-
-	// 启动时异步填充全A缓存（不阻塞服务启动），之后每10分钟自动刷新
-	go func() {
-		// 启动后等待2秒让服务先就绪，再跑首次全量扫描
-		time.Sleep(2 * time.Second)
-		log.Println("后台全A缓存刷新启动...")
-		stockService.ScanAllAShares()
-		log.Println("首次全A缓存刷新完成")
-
-		ticker := time.NewTicker(10 * time.Minute)
-		defer ticker.Stop()
-		for range ticker.C {
-			log.Println("定时全A缓存刷新...")
-			stockService.ScanAllAShares()
-			log.Println("定时全A缓存刷新完成")
+	// ===== CORS =====
+	r.Use(func(c *gin.Context) {
+		c.Header("Access-Control-Allow-Origin", "*")
+		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(http.StatusNoContent)
+			return
 		}
-	}()
+		c.Next()
+	})
+	r.Use(gin.Logger())
 
-	api := r.Group("/api")
-	{
-		stock := api.Group("/stock")
-		{
-			stock.GET("/market", stockHandler.GetMarketStatus)
-			stock.GET("/quotes", stockHandler.GetQuotes)
-			stock.POST("/diagnose", stockHandler.DiagnoseStock)
-			stock.POST("/scan", stockHandler.ScanStocks)
-			stock.POST("/scan-core-satellite", stockHandler.ScanCoreSatellite)
-			stock.POST("/scan-dual-engine-fast", stockHandler.ScanDualEngineFast)
-			stock.GET("/watchlist", stockHandler.GetWatchList)
-			stock.POST("/watchlist/add", stockHandler.AddWatchList)
-			stock.POST("/watchlist/remove", stockHandler.RemoveWatchList)
-			stock.GET("/watchlist/scan", stockHandler.ScanWatchList)
-			stock.GET("/detail/:code", stockHandler.GetStockDetail)
-			stock.GET("/scores", stockHandler.GetStockScores)
-			stock.GET("/unified-score", stockHandler.GetUnifiedScore)
-			stock.GET("/position-health", stockHandler.GetPositionHealthScore)
-			stock.GET("/search", stockHandler.SearchStocks)
-			stock.POST("/scan-all", stockHandler.ScanAllAShares)
-			stock.GET("/rank", stockHandler.GetAllStockRank)
-			stock.POST("/sell-advice", stockHandler.GetSellAdvice)
-		}
-		api.GET("/health", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{"status": "success", "data": "ok"})
+	// ===== HEALTH CHECK FIRST (no dependencies) =====
+	r.GET("/api/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"status": "success",
+			"data":   "minimal-ok",
+			"port":   port,
+			"time":   time.Now().Format(time.RFC3339),
 		})
-		api.GET("/debug-embed", func(c *gin.Context) {
+	})
+
+	// ===== DEBUG: list static files =====
+	r.GET("/api/debug-static", func(c *gin.Context) {
 		entries, err := os.ReadDir("./static")
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{"status": "error", "error": err.Error()})
@@ -90,60 +86,35 @@ func main() {
 			"entries":     names,
 		})
 	})
-	}
 
-	// ============ Static file serving (from disk, NOT embed) ============
-	// Log what's in the static directory
-	diskEntries, diskErr := os.ReadDir("./static")
-	if diskErr != nil {
-		log.Printf("[STATIC] ERROR reading ./static: %v", diskErr)
-	} else {
-		log.Printf("[STATIC] ./static contains %d entries", len(diskEntries))
-		for _, e := range diskEntries {
-			log.Printf("[STATIC]   %s (dir=%v)", e.Name(), e.IsDir())
-		}
-	}
+	// ===== DEBUG: panic test =====
+	r.GET("/api/debug-panic", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"status": "ok",
+			"msg":    "this endpoint works, no panic",
+		})
+	})
 
-	// Register static files AND SPA fallback AFTER all API routes
-	// This is critical: Gin matches routes in registration order
+	// ===== Static files + SPA fallback =====
 	r.Static("/assets", "./static/assets")
 	r.NoRoute(func(c *gin.Context) {
 		path := c.Request.URL.Path
-		// Don't interfere with API routes (shouldn't reach here for /api/*, but be safe)
 		if len(path) >= 4 && path[:4] == "/api" {
 			c.JSON(http.StatusNotFound, gin.H{"code": 404, "msg": "api not found"})
 			return
 		}
-		// SPA: serve index.html for any unmatched route
 		c.File("./static/index.html")
 	})
-	log.Println("[STATIC] Static file serving registered (from disk)")
 
-	// 使用自定义 http.Server，设置写超时为 90s
-	// ScanDualEngineFast 并发后耗时约 5s，ScanAllAShares 耗时约 60s
-	// 写超时必须 > 最慢接口，否则扫描中途连接被强制切断 → 前端收到空响应
+	log.Printf("[READY] Server listening on :%s", port)
 	srv := &http.Server{
 		Addr:         ":" + port,
 		Handler:      r,
 		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 180 * time.Second, // 全A扫描59页最坏~120s，180s留有余量
+		WriteTimeout: 180 * time.Second,
 		IdleTimeout:  120 * time.Second,
 	}
-	log.Printf("Server starting on :%s", port)
 	if err := srv.ListenAndServe(); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
-	}
-}
-
-func corsMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", "*")
-		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(http.StatusNoContent)
-			return
-		}
-		c.Next()
+		log.Fatalf("FATAL: %v", err)
 	}
 }
