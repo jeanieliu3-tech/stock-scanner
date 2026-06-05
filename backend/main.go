@@ -20,7 +20,7 @@ func main() {
 		port = os.Getenv("DEPLOY_RUN_PORT")
 	}
 	if port == "" {
-		port = "3000"
+		port = "10000"
 	}
 
 	gin.SetMode(gin.ReleaseMode)
@@ -85,6 +85,7 @@ func main() {
 		c.File("./static/index.html")
 	})
 
+	log.Printf("[ENV] PORT=%s BACKEND_PORT=%s", os.Getenv("PORT"), os.Getenv("BACKEND_PORT"))
 	log.Printf("Serving static frontend from disk at ./static")
 	log.Printf("Server starting on :%s", port)
 
