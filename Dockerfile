@@ -2,7 +2,8 @@
 FROM node:20-alpine AS frontend-builder
 WORKDIR /build/frontend
 COPY frontend/package.json frontend/package-lock.json ./
-RUN npm install --legacy-peer-deps
+RUN npm install --legacy-peer-deps --include=optional
+RUN npm ls @rollup/rollup-linux-x64-musl 2>/dev/null || npm install @rollup/rollup-linux-x64-musl
 COPY frontend/ ./
 RUN npx vite build
 
