@@ -16,7 +16,7 @@ RUN go mod verify
 COPY backend/ ./
 # 前端构建产物复制到 ./static 供磁盘 serving
 COPY --from=frontend-builder /build/frontend/dist ./static
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -v -o backend_linux . 2>&1
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -v -o backend_linux main.go 2>&1
 
 # ---- Stage 3: Runtime ----
 FROM alpine:3.20

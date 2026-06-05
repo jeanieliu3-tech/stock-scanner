@@ -81,7 +81,12 @@ func main() {
 			stock.POST("/sell-advice", stockHandler.GetSellAdvice)
 		}
 		api.GET("/health", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{"status": "success", "data": "ok"})
+			c.JSON(http.StatusOK, gin.H{
+				"status":  "success",
+				"data":    "ok",
+				"version": "5d95135",
+				"build":   "2026-06-05",
+			})
 		})
 	}
 
