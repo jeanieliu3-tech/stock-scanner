@@ -1,9 +1,8 @@
-# ---- Stage 1: Build frontend ----
-FROM node:20-alpine AS frontend-builder
+# ---- Stage 1: Build frontend (Debian glibc, 原生模块无兼容问题) ----
+FROM node:20-slim AS frontend-builder
 WORKDIR /build/frontend
 COPY frontend/package.json frontend/package-lock.json ./
-RUN npm install --legacy-peer-deps --include=optional
-RUN npm ls @rollup/rollup-linux-x64-musl 2>/dev/null || npm install @rollup/rollup-linux-x64-musl
+RUN npm install --legacy-peer-deps
 COPY frontend/ ./
 RUN npx vite build
 
