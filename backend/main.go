@@ -30,19 +30,30 @@ func main() {
 	stockService := services.NewStockService()
 	stockHandler := handlers.NewStockHandler(stockService)
 
-	// 启动时异步填充全A缓存
+	// 启动时异步填充全A缓存（含 panic recovery 防止崩溃）
 	go func() {
-		time.Sleep(2 * time.Second)
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[PANIC] 全A缓存刷新goroutine崩溃: %v", r)
+			}
+		}()
+		time.Sleep(5 * time.Second)
 		log.Println("后台全A缓存刷新启动...")
-		stockService.ScanAllAShares()
-		log.Println("首次全A缓存刷新完成")
+		if _, err := stockService.ScanAllAShares(); err != nil {
+			log.Printf("首次全A缓存刷新失败(非致命): %v", err)
+		} else {
+			log.Println("首次全A缓存刷新完成")
+		}
 
 		ticker := time.NewTicker(10 * time.Minute)
 		defer ticker.Stop()
 		for range ticker.C {
 			log.Println("定时全A缓存刷新...")
-			stockService.ScanAllAShares()
-			log.Println("定时全A缓存刷新完成")
+			if _, err := stockService.ScanAllAShares(); err != nil {
+				log.Printf("定时全A缓存刷新失败: %v", err)
+			} else {
+				log.Println("定时全A缓存刷新完成")
+			}
 		}
 	}()
 
