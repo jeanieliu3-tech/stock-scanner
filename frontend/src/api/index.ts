@@ -156,7 +156,7 @@ export async function getAllStockRank(params: {
   if (params.order) query.set('order', params.order)
   if (params.minScore) query.set('minScore', String(params.minScore))
   if (params.filter) query.set('filter', params.filter)
-  return request<AllStockRankResponse>(`/stock/rank?${query.toString()}`)
+  return request<AllStockRankResponse>(`/stock/rank?${query.toString()}`, { timeoutMs: 90000 })
 }
 
 // 卖出建议

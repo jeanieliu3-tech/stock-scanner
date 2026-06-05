@@ -1677,13 +1677,8 @@ func (s *StockService) ScanAllAShares() (*models.AllStockScanResult, error) {
 	}
 	totalStocks := len(quotes)
 
-	// 构建行业映射（从东方财富API数据中获取）
-	codeIndustryMap := make(map[string]string)
-	for _, q := range quotes {
-		if q.Industry != "" {
-			codeIndustryMap[q.Code] = q.Industry
-		}
-	}
+	// 构建行业映射（从名称推断，Sina API不返回行业字段）
+	codeIndustryMap := s.inferIndustryMap(quotes)
 	validStocks := len(quotes)
 
 	// Step 3: 精细化评分（连续化评分，避免离散阶梯）
@@ -2064,8 +2059,8 @@ func (s *StockService) ScanAllAShares() (*models.AllStockScanResult, error) {
 		allRanked[i].Rank = i + 1
 	}
 
-	// 缓存（仅当结果有效时缓存）
-	if len(allRanked) >= 1000 {
+	// 缓存（仅当结果有效时缓存，阈值降至100防止数据源不稳定时永远无法缓存）
+	if len(allRanked) >= 100 {
 		s.allStockCacheMu.Lock()
 		s.allStockCache = allRanked
 		s.allStockCacheTime = time.Now()
@@ -2101,16 +2096,20 @@ func (s *StockService) GetRankWithPagination(req models.AllStockRankRequest) (*m
 	cacheTime := s.allStockCacheTime
 	s.allStockCacheMu.RUnlock()
 
-	if cache == nil || time.Since(cacheTime) > 10*time.Minute {
-		// 触发全量扫描
-		_, err := s.ScanAllAShares()
-		if err != nil {
-			return nil, err
-		}
-		s.allStockCacheMu.RLock()
-		cache = s.allStockCache
-		cacheTime = s.allStockCacheTime
-		s.allStockCacheMu.RUnlock()
+	if cache == nil {
+		// 缓存为空，返回空数据（避免同步触发耗时30-60s的全量扫描导致超时）
+		return &models.AllStockRankResponse{
+			Items:      []models.RankStockItem{},
+			Total:      0,
+			Page:       req.Page,
+			PageSize:   req.PageSize,
+			TotalPages: 0,
+			ScanTime:   "请先点击「全A股扫描」",
+			CostMs:     time.Since(startTime).Milliseconds(),
+		}, nil
+	}
+	if time.Since(cacheTime) > 10*time.Minute {
+		log.Printf("全A缓存已过期，返回旧数据，后台将自动刷新")
 	}
 
 	// 过滤 - 支持逗号分隔的复合过滤条件

@@ -20,6 +20,15 @@
       </div>
     </div>
 
+    <!-- 错误提示 -->
+    <div v-if="errorMsg" class="bg-red-50 border border-red-200 rounded-xl p-3 flex items-start gap-2">
+      <span class="text-red-500 text-lg shrink-0">⚠</span>
+      <div class="flex-1">
+        <p class="text-sm text-red-700 font-medium">{{ errorMsg }}</p>
+        <button class="text-xs text-red-500 hover:text-red-700 underline mt-1" @click="errorMsg = ''">关闭</button>
+      </div>
+    </div>
+
     <!-- 操作栏 -->
     <div class="flex flex-col sm:flex-row items-start sm:items-center gap-3 bg-white rounded-xl p-4 shadow-sm">
       <button
@@ -408,6 +417,7 @@ const changeFilter = ref('')
 const scoreFilter = ref('')
 const detailCode = ref('')
 const selectedCode = ref('')
+const errorMsg = ref('')
 
 // 自选股（本地存储）
 const favorites = ref<string[]>(JSON.parse(localStorage.getItem('stock_favorites') || '[]'))
@@ -451,14 +461,18 @@ function selectRow(code: string) {
 
 async function startScan() {
   scanning.value = true
+  errorMsg.value = ''
   try {
     const res = await scanAllAShares()
     if (res.code === 200 && res.data) {
       scanResult.value = res.data
       currentPage.value = 1
       await loadRank()
+    } else {
+      errorMsg.value = '扫描返回异常：' + (res.msg || '未知错误')
     }
-  } catch (e) {
+  } catch (e: any) {
+    errorMsg.value = '全A扫描失败：' + (e?.message || '网络超时或服务异常，请重试')
     console.error('全A扫描失败', e)
   } finally {
     scanning.value = false
@@ -491,8 +505,11 @@ async function loadRank() {
     const res = await getAllStockRank(params)
     if (res.code === 200 && res.data) {
       rankData.value = res.data
+    } else if (res.code !== 200) {
+      errorMsg.value = '加载排名失败：' + (res.msg || '服务异常')
     }
-  } catch (e) {
+  } catch (e: any) {
+    errorMsg.value = '加载排名失败：' + (e?.message || '网络异常，请重试')
     console.error('加载排名失败', e)
   }
 }
@@ -508,6 +525,7 @@ watch([currentPage, pageSize, sortBy, filterType, changeFilter, scoreFilter, ind
 
 // 初始加载
 onMounted(() => {
-  loadRank()
+  // 不自动加载排名，避免缓存为空时触发同步扫描导致超时
+  // 用户需手动点击「全A股扫描」按钮
 })
 </script>
