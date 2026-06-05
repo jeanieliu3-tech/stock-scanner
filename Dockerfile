@@ -4,7 +4,7 @@ WORKDIR /build/frontend
 COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm ci
 COPY frontend/ ./
-RUN npm run build
+RUN npx vite build
 
 # ---- Stage 2: Build backend ----
 FROM golang:1.22-alpine AS backend-builder
