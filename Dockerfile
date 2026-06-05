@@ -2,7 +2,7 @@
 FROM node:20-slim AS frontend-builder
 WORKDIR /build/frontend
 COPY frontend/package.json frontend/package-lock.json ./
-RUN npm install --legacy-peer-deps
+RUN npm install --legacy-peer-deps --include=optional
 COPY frontend/ ./
 RUN npx vite build
 
