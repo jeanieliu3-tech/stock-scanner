@@ -14,7 +14,7 @@ RUN go mod download
 COPY backend/ ./
 # 前端构建产物在 ../frontend/dist，复制到 ./static 供 embed 使用
 COPY --from=frontend-builder /build/frontend/dist ./static
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o backend_linux main.go
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o backend_linux .
 
 # ---- Stage 3: Runtime (with static files) ----
 FROM alpine:3.20
